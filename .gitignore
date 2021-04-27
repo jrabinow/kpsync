@@ -11,8 +11,8 @@ bin
 build/*
 cache
 data
-docs/
 include/
+docs/_build
 lib/
 pykeepass_socket
 venv

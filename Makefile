@@ -13,12 +13,13 @@ prepcommit:
 	black src/
 
 docs:
+	mkdir -p docs/_static
 	cd docs && sphinx-apidoc -f -o . ../src/ && $(MAKE) html
 
 clean:
 	$(RM) pykeepass_socket
 	$(RM) -r ./build/ .mypy_cache ./src/__pycache__ ./src/*.pyc
-	cd docs && $(MAKE) clean
+	test -d docs && cd docs && $(MAKE) clean || true
 
 requirements:
 	pip freeze | grep -E "$(cat $(git root)/requirements.txt |cut -d= -f1|trimspaces|tr '\n' '|')''" >| $(git root)/requirements.txt
