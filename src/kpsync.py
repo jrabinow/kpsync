@@ -5,14 +5,6 @@
 Sync DB passwords according to syncconfig.ini
 """
 
-from typing import List, Optional, Tuple, Set, Dict
-
-# from pykeepass_cache import PyKeePass, cached_databases
-from pykeepass import PyKeePass as PyKeePassNoCache
-from pykeepass.entry import Entry
-from pykeepass.group import Group
-from pykeepass.exceptions import CredentialsError
-
 import argparse
 import configparser
 import getpass
@@ -20,8 +12,15 @@ import logging
 import os
 import stat
 import sys
+from typing import Dict, List, Optional, Set, Tuple
 
 import rpyc
+
+# from pykeepass_cache import PyKeePass, cached_databases
+from pykeepass import PyKeePass as PyKeePassNoCache
+from pykeepass.entry import Entry
+from pykeepass.exceptions import CredentialsError
+from pykeepass.group import Group
 
 rpyc.core.vinegar._generic_exceptions_cache[
     "pykeepass.exceptions.CredentialsError"

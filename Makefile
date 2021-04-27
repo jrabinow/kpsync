@@ -1,12 +1,16 @@
 all: depend
-	pex -o ./build/kpsync -D . -r ./build/pex-requirements.txt -e kpsync:main
+	pex -o ./build/kpsync -D src/ -r ./build/pex-requirements.txt -e kpsync:main
 
 depend:
 	mkdir -p ./build
-	grep -vE '^(black|mypy|pex|sphinx)' requirements.txt > ./build/pex-requirements.txt
+	grep -vE '^(isort|black|mypy|pex|sphinx)' requirements.txt > ./build/pex-requirements.txt
 
 typecheck:
 	mypy src/
+
+prepcommit:
+	isort src/
+	black src/
 
 docs:
 	cd docs && sphinx-apidoc -f -o . ../src/ && $(MAKE) html
