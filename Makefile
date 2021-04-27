@@ -1,5 +1,5 @@
 all: depend
-	pex -o ./build/keepassx_sync -D ./src -r ./build/pex-requirements.txt -e keepassx_sync:main
+	pex -o ./build/keepassx_sync -D . -r ./build/pex-requirements.txt -e keepassx_sync:main
 
 depend:
 	mkdir -p ./build
