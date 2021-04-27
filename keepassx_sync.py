@@ -79,19 +79,24 @@ def parse_config(
     configfile: str = args.config or "syncconfig.ini"
     config: configparser.ConfigParser = configparser.ConfigParser()
     config.read(configfile)
-    entries: List[str] = config["entries"]["entries"].strip().split("\n")
 
-    db_list: List[Tuple[str, Optional[str]]] = args.database
-    if len(db_list) == 0:
-        for db_name, data in config["db"].items():
-            db_info: List[str] = data.strip().split("\n")
-            db_file: str = os.path.expanduser(os.path.expandvars(db_info[0]))
-            db_key: Optional[str] = (
-                os.path.expanduser(os.path.expandvars(db_info[1]))
-                if len(db_info) > 1
-                else None
-            )
-            db_list.append((db_file, db_key))
+    try:
+        entries: List[str] = config["entries"]["entries"].strip().split("\n")
+
+        db_list: List[Tuple[str, Optional[str]]] = args.database
+        if len(db_list) == 0:
+            for db_name, data in config["db"].items():
+                db_info: List[str] = data.strip().split("\n")
+                db_file: str = os.path.expanduser(os.path.expandvars(db_info[0]))
+                db_key: Optional[str] = (
+                    os.path.expanduser(os.path.expandvars(db_info[1]))
+                    if len(db_info) > 1
+                    else None
+                )
+                db_list.append((db_file, db_key))
+    except KeyError as e:
+        LOG.critical("malformed or missing syncconfig.ini file: {}".format(e))
+        exit(0)
 
     return db_list, entries
 
