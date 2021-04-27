@@ -5,12 +5,13 @@
 Sync DB passwords according to syncconfig.ini
 """
 
-from typing import List, Optional
+from typing import List, Optional, Tuple, Set, Dict
 
 # from pykeepass_cache import PyKeePass, cached_databases
 from pykeepass import PyKeePass as PyKeePassNoCache
+from pykeepass.entry import Entry
+from pykeepass.group import Group
 from pykeepass.exceptions import CredentialsError
-from datetime import datetime
 
 import argparse
 import configparser
@@ -61,7 +62,7 @@ Use this option once per database:
         "--config", default="syncconfig.ini", help="manually specify config file"
     )
 
-    args = parser.parse_args()
+    args: argparse.Namespace = parser.parse_args()
     args.database = [(db[0], db[1] if len(db) > 1 else None) for db in args.db]
     del args.db
     return args
@@ -72,18 +73,20 @@ def is_dir_world_readable(directory: str = ".") -> bool:
     return bool(st.st_mode & stat.S_IROTH)
 
 
-def parse_config(args):
-    configfile = args.config or "syncconfig.ini"
-    config = configparser.ConfigParser()
+def parse_config(
+    args: argparse.Namespace,
+) -> Tuple[List[Tuple[str, Optional[str]]], List[str]]:
+    configfile: str = args.config or "syncconfig.ini"
+    config: configparser.ConfigParser = configparser.ConfigParser()
     config.read(configfile)
-    entries = config["entries"]["entries"].strip().split("\n")
+    entries: List[str] = config["entries"]["entries"].strip().split("\n")
 
-    db_list = args.database
+    db_list: List[Tuple[str, Optional[str]]] = args.database
     if len(db_list) == 0:
         for db_name, data in config["db"].items():
-            db_info = data.strip().split("\n")
-            db_file = os.path.expanduser(os.path.expandvars(db_info[0]))
-            db_key = (
+            db_info: List[str] = data.strip().split("\n")
+            db_file: str = os.path.expanduser(os.path.expandvars(db_info[0]))
+            db_key: Optional[str] = (
                 os.path.expanduser(os.path.expandvars(db_info[1]))
                 if len(db_info) > 1
                 else None
@@ -93,14 +96,17 @@ def parse_config(args):
     return db_list, entries
 
 
-def persist_entry(db_file, uptodate_entry):
+def persist_entry(
+    db_file: PyKeePassNoCache, uptodate_entry: Entry
+) -> Tuple[Entry, bool]:
     group, dirty = ensure_group(
         db_file,
         uptodate_entry.group.path,
         uptodate_entry.group.icon,
         uptodate_entry.group.notes,
     )
-    existing_entry = db_file.find_entries_by_path(uptodate_entry.path)
+    updated_entry: Entry
+    existing_entry: Optional[Entry] = db_file.find_entries_by_path(uptodate_entry.path)
     if existing_entry is None:
         LOG.info("adding {} to {} ({})".format(uptodate_entry, group, db_file.filename))
         dirty = True
@@ -154,19 +160,24 @@ def persist_entry(db_file, uptodate_entry):
                 existing_entry.tags = uptodate_entry.tags
             if uptodate_entry.icon is not None:
                 existing_entry.icon = uptodate_entry.icon
-    updated_entry = existing_entry
+        updated_entry = existing_entry
 
     return updated_entry, dirty
 
 
-def group_obj_nothrows_on_missing(db, group_name):
-    group_list = db.find_groups_by_name(group_name)
+def group_obj_nothrows_on_missing(
+    db: PyKeePassNoCache, group_name: str
+) -> Optional[Group]:
+    group_list: List[Group] = db.find_groups_by_name(group_name)
     return group_list[0] if len(group_list) > 0 else None
 
 
-def ensure_group(db, group_path, icon=None, notes=None):
-    dirty = False
-    group = db.find_groups_by_path(group_path)
+def ensure_group(
+    db: PyKeePassNoCache, group_path: List[str], icon: bytes = None, notes: str = None
+) -> Tuple[Group, bool]:
+
+    dirty: bool = False
+    group: Group = db.find_groups_by_path(group_path)
 
     if group is None:
         if len(group_path) <= 0:
@@ -181,14 +192,14 @@ def ensure_group(db, group_path, icon=None, notes=None):
 
 
 def sync_entry(
-    db_handles: List,
+    db_handles: List[PyKeePassNoCache],
     entry: str,
-) -> List:
+) -> Set[PyKeePassNoCache]:
 
-    group_name = os.path.dirname(entry)
-    entry_title = os.path.basename(entry)
+    group_name: str = os.path.dirname(entry)
+    entry_title: str = os.path.basename(entry)
 
-    entry_dict = {}
+    entry_dict: Dict[PyKeePassNoCache, Optional[Entry]] = {}
     for handle in db_handles:
         matching_entries = handle.find_entries_by_title(
             entry_title,
@@ -214,7 +225,7 @@ def sync_entry(
             )
         )
     else:
-        updated_dbs = set()
+        updated_dbs: Set[PyKeePassNoCache] = set()
         for handle in db_handles:
             if handle != uptodate_db:
                 _, dirty = persist_entry(handle, uptodate_entry)
@@ -225,15 +236,14 @@ def sync_entry(
 
 
 def create_db_handle(
-    db_filepath,
-    db_keypath=None,
-    use_cache=True,
+    db_filepath: str,
+    db_keypath: str = None,
+    use_cache: bool = True,
     socket_path: str = "./pykeepass_socket",
-):
+) -> PyKeePassNoCache:
 
-    use_cache: bool = not is_dir_world_readable()
+    use_cache = not is_dir_world_readable()
 
-    password: Optional[str] = None
     if use_cache:
         # if db_filepath not in cached_databases(socket_path=socket_path):
         #    password: str = getpass.getpass(
@@ -246,34 +256,34 @@ def create_db_handle(
         #    timeout=600,
         #    socket_path=socket_path,
         # )
-        password = getpass.getpass(prompt="Password for {}: ".format(db_filepath))
+        password: str = getpass.getpass(prompt="Password for {}: ".format(db_filepath))
         try:
-            kp = PyKeePassNoCache(
+            kp: PyKeePassNoCache = PyKeePassNoCache(
                 db_filepath,
                 password=password,
                 keyfile=db_keypath,
             )
         except FileNotFoundError as e:
-            LOG.fatal("file not found: {}".format(e))
+            LOG.critical("file not found: {}".format(e))
         return kp
     return None
 
 
 def main():
-    args = parse_args()
+    args: argparse.Namespace = parse_args()
     db_list, entries = parse_config(args)
 
     try:
-        db_handles = [
+        db_handles: List[PyKeePassNoCache] = [
             create_db_handle(db_filepath, key_path) for db_filepath, key_path in db_list
         ]
     except CredentialsError as e:
         LOG.fatal("bad credentials: {}".format(e))
         exit(1)
 
-    dbs_to_save = set()
+    dbs_to_save: Set[PyKeePassNoCache] = set()
     for entry in entries:
-        updated_dbs = sync_entry(db_handles, entry)
+        updated_dbs: Set[PyKeePassNoCache] = sync_entry(db_handles, entry)
         dbs_to_save.update(updated_dbs)
 
     for db in dbs_to_save:
