@@ -15,6 +15,7 @@ import sys
 from typing import Dict, List, Optional, Set, Tuple
 
 import rpyc
+from xdg import xdg_config_home
 
 # from pykeepass_cache import PyKeePass, cached_databases
 from pykeepass import PyKeePass as PyKeePassNoCache
@@ -76,6 +77,8 @@ def parse_config(
     args: argparse.Namespace,
 ) -> Tuple[List[Tuple[str, Optional[str]]], List[str]]:
     configfile: str = args.config or "syncconfig.ini"
+    if not os.path.isfile(configfile):
+        configfile = "{}/kpsync/syncconfig.ini".format(xdg_config_home())
     config: configparser.ConfigParser = configparser.ConfigParser()
     config.read(configfile)
 
@@ -246,31 +249,30 @@ def create_db_handle(
     socket_path: str = "./pykeepass_socket",
 ) -> PyKeePassNoCache:
 
-    use_cache = not is_dir_world_readable()
+    # use_cache = not is_dir_world_readable()
 
-    if use_cache:
-        # if db_filepath not in cached_databases(socket_path=socket_path):
-        #    password: str = getpass.getpass(
-        #        prompt="Password for {}: ".format(db_filepath)
-        #    )
-        # kp = PyKeePass(
-        #    db_filepath,
-        #    password=password,
-        #    keyfile=db_keypath,
-        #    timeout=600,
-        #    socket_path=socket_path,
-        # )
-        password: str = getpass.getpass(prompt="Password for {}: ".format(db_filepath))
-        try:
-            kp: PyKeePassNoCache = PyKeePassNoCache(
-                db_filepath,
-                password=password,
-                keyfile=db_keypath,
-            )
-        except FileNotFoundError as e:
-            LOG.critical("file not found: {}".format(e))
-        return kp
-    return None
+    # if use_cache:
+    #     if db_filepath not in cached_databases(socket_path=socket_path):
+    #        password: str = getpass.getpass(
+    #            prompt="Password for {}: ".format(db_filepath)
+    #        )
+    #     kp = PyKeePass(
+    #        db_filepath,
+    #        password=password,
+    #        keyfile=db_keypath,
+    #        timeout=600,
+    #        socket_path=socket_path,
+    #     )
+    password: str = getpass.getpass(prompt="Password for {}: ".format(db_filepath))
+    try:
+        kp: PyKeePassNoCache = PyKeePassNoCache(
+            db_filepath,
+            password=password,
+            keyfile=db_keypath,
+        )
+    except FileNotFoundError as e:
+        LOG.critical("file not found: {}".format(e))
+    return kp
 
 
 def main():
