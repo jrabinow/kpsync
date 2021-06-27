@@ -17,3 +17,4 @@ lib/
 pykeepass_socket
 venv
 /bazel-*
+/Pipfile.lock

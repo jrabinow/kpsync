@@ -1,6 +1,0 @@
-pex==2.1.40
-pykeepass-cache==2.0.3
-pykeepass==4.0.0
-sphinx-rtd-theme==0.5.2
-strictyaml==1.4.4
-xdg==5.0.2
