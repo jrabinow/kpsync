@@ -2,61 +2,106 @@
 
 ## Partial sync of KeePassX databases through the command-line
 
-Shortcomings:
-- Yubikeys, OTP and other methods of unlocking are not supported
+Limitations:
+- Yubikeys, OTP and other methods of unlocking are not supported (contributions welcome!)
 - the sync algorithm is very dumb and does not handle conflicts: if you update the same entry in 2 different DBs, the most recent update will overwrite any changes made to the entry in the other DB
 
-Create a syncconfig.ini file (sample follows).
+Install dependencies:
+```
+pipenv install
+```
+
+Create a syncconfig.yml file (sample follows), either in the current directory, or in ~/.config/kpsync/:
 
 ```
-[db]
-    # You can add as many KeePassX DB files as you'd like to this section,
-    # kpsync will sync them all amongst each other by using the most recently
-    # updated entry.
-    # DB names are fooDB and barDB here, but their naming can be anything you
-    # want as long as it's under the [db] section.
-    # KeePassX DBs are made up of a path to a keepassx db and an optional path
-    # to a key file on a separate line.
-    # '~' and shell variables expansion in filepaths are supported.
+db:
+  # You can add as many KeePassX DB files as you'd like to this section,
+  # DB names are fooDB and barDB here, but you can name them anything they want
+  # '~' and shell variables expansion in filepaths are supported.
+  fooDB:
+    dbfile: $creds/myfoodb.kdbx
+    keyfile: /mnt/removable_usb/supersecret.pem
+  barDB:
+    dbfile: ~/alternate_db/shared_pw.kdbx
 
-    fooDB =
-        $creds/myfoodb.kdbx
-        /mnt/removable_usb/supersecret.pem
-    barDB =
-        ~/alternate_db/shared_pw.kdbx
+job:
+  default:
+    # This is the job named default
+    db:
+      - fooDB
+      - barDB
+    entries:
+      # Each line is the title of one of the entries in your KeepassX DB. In case
+      # you have several different accounts with the same title, you can
+      # differentiate between those you want to sync by giving the group path
+      # (checkout the 'google' example below).
+      # Failure to specify which account to sync will make kpsync abort all
+      # operations in case of ambiguity: we do not want to sync the wrong entry
+      # by error.
+      - Facebook
+      - Github
+      - Personal/Google
+      - Pro Account/Google
+      - Pr0nhub
 
-[entries]
-    # Each line is the title of one of the entries in your KeepassX DB. In case
-    # you have several different accounts with the same title, you can
-    # differentiate between those you want to sync by giving the group path
-    # (checkout the 'google' example below). Failure to specify which account to
-    # sync will make kpsync abort all operations in case of ambiguity: we do not
-    # want to sync the wrong entry by error.
-
-    entries =
-        Facebook
-        Github
-        Personal/Google
-        Pro Account/Google
-        Pr0nhub
+  foojob:
+    # this is a job named foojob
+    db:
+      - fooDB
+      - barDB
+    entries:
+      - random account
 ```
 
 Then, launch kpsync:
 ```
-$ ./kpsync
+$ ./kpsync list jobs
+default
+foojob
+$ ./kpsync run foojob
+$ ./kpsync run                  # if no job is specified, `default` job is run
+$ ./kpsync sync --db fooDB barDB --entries microsoft discord linkedin
 ```
-KPSync will use the `syncconfig.ini` file found in the current directory. You can also specify the path to the config file by using the `--config` option
+KPSync will use the `syncconfig.yml` file found in the current directory by default - if that's not found, it will check $XDG_CONFIG_HOME/kpsync/syncconfig.yml. You can also specify the path to the config file by using the `--config` option
 
 ```
-usage: kpsync.py [-h] [-d] [--db [database [keyfile ...]]] [--config CONFIG]
+usage: kpsync.py [-h] [-d] [--config CONFIG] {list,run,sync} ...
+
+positional arguments:
+  {list,run,sync}
+    list           list entities in the config file
+    run            run a job
+    sync           specify dbs and entries to sync from the command-line. DBs must be registered in the config file
 
 optional arguments:
-  -h, --help            show this help message and exit
-  -d, --debug           enable debug logging information
-  --db database [keyfile ...]
-                        replace db entries in syncconfig.ini with path/to/database path/to/keyfile.
-                        Use this option once per database:
-                        >>> kpsync.py --db db1 keyfile_for_db1 --db db2 --db db3 keyfile_for_db3
+  -h, --help       show this help message and exit
+  -d, --debug      enable debug logging information
+  --config CONFIG  manually specify config file
 
-  --config CONFIG       manually specify config file
+#############################################
+usage: kpsync.py list [-h] [-v] {all,db,jobs}
+
+positional arguments:
+  {all,db,jobs}
+
+optional arguments:
+  -v, --verbose  verbose mode
+
+####################################################
+usage: kpsync.py run [-h] [--dry-run] [JOB_NAME ...]
+
+positional arguments:
+  JOB_NAME    specify job name
+
+optional arguments:
+  --dry-run   don't save dbs, just print what would be done
+#########################################################################
+usage: kpsync.py sync [-h] [--dry-run] --db DB [DB ...] --entries ENTRIES
+                      [ENTRIES ...]
+
+optional arguments:
+  --dry-run             don't save dbs, just print what would be done
+  --db DB [DB ...]      db name. DB must be registered in config file
+  --entries ENTRIES [ENTRIES ...]
+                        list of entries
 ```
