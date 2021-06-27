@@ -2,30 +2,25 @@
 # -*- coding: utf-8 -*-
 
 """
-Sync DB passwords according to syncconfig.ini
+Sync DB passwords according to syncconfig.yml
 """
 
 import argparse
-import configparser
 import getpass
 import logging
+import json
 import os
 import stat
 import sys
+from collections import namedtuple
 from typing import Dict, List, Optional, Set, Tuple
 
-import rpyc
-from xdg import xdg_config_home
-
-# from pykeepass_cache import PyKeePass, cached_databases
+import strictyaml as yaml
 from pykeepass import PyKeePass as PyKeePassNoCache
 from pykeepass.entry import Entry
 from pykeepass.exceptions import CredentialsError
 from pykeepass.group import Group
-
-rpyc.core.vinegar._generic_exceptions_cache[
-    "pykeepass.exceptions.CredentialsError"
-] = CredentialsError
+from xdg import xdg_config_home
 
 LOG: logging.Logger = logging.getLogger()
 LOG.setLevel("INFO")
@@ -33,6 +28,10 @@ formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
 ch = logging.StreamHandler()
 ch.setFormatter(formatter)
 LOG.addHandler(ch)
+
+
+Database = namedtuple("Database", ["dbname", "dbfile", "keyfile"])
+Job = namedtuple("Job", ["jobname", "db", "entries"])
 
 
 def parse_args() -> argparse.Namespace:
@@ -45,26 +44,44 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="enable debug logging information",
     )
-    parser.add_argument(
-        "--db",
-        nargs="*",
-        action="append",
-        default=[],
-        metavar=("database", "keyfile"),
-        help="""replace db entries in syncconfig.ini with path/to/database path/to/keyfile.
-Use this option once per database:
->>> {} --db db1 keyfile_for_db1 --db db2 --db db3 keyfile_for_db3\n
-""".format(
-            os.path.basename(sys.argv[0])
-        ),
+    parser.add_argument("--config", help="manually specify config file")
+    subparsers: argparse._SubParsersAction = parser.add_subparsers(dest="command")
+    listparser: argparse.ArgumentParser = subparsers.add_parser(
+        "list", help="list entities in the config file"
     )
-    parser.add_argument(
-        "--config", default="syncconfig.ini", help="manually specify config file"
+    listparser.add_argument("-v", "--verbose", action="store_true", help="verbose mode")
+    listparser.add_argument("ENTITY_TYPE", choices=["all", "db", "jobs"])
+
+    runparser: argparse.ArgumentParser = subparsers.add_parser("run", help="run a job")
+    runparser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="don't save dbs, just print what would be done",
+    )
+    runparser.add_argument(
+        "JOB_NAME", help="specify job name", nargs="*", default=["default"]
+    )
+
+    syncparser: argparse.ArgumentParser = subparsers.add_parser(
+        "sync",
+        help="specify dbs and entries to sync from the command-line. DBs must be registered in the config file",
+    )
+    syncparser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="don't save dbs, just print what would be done",
+    )
+    syncparser.add_argument(
+        "--db",
+        required=True,
+        nargs="+",
+        help="db name. DB must be registered in config file",
+    )
+    syncparser.add_argument(
+        "--entries", required=True, nargs="+", help="list of entries"
     )
 
     args: argparse.Namespace = parser.parse_args()
-    args.database = [(db[0], db[1] if len(db) > 1 else None) for db in args.db]
-    del args.db
     return args
 
 
@@ -73,34 +90,46 @@ def is_dir_world_readable(directory: str = ".") -> bool:
     return bool(st.st_mode & stat.S_IROTH)
 
 
-def parse_config(
-    args: argparse.Namespace,
-) -> Tuple[List[Tuple[str, Optional[str]]], List[str]]:
-    configfile: str = args.config or "syncconfig.ini"
-    if not os.path.isfile(configfile):
-        configfile = "{}/kpsync/syncconfig.ini".format(xdg_config_home())
-    config: configparser.ConfigParser = configparser.ConfigParser()
-    config.read(configfile)
+def parse_config(configfile: str = None) -> Tuple[Dict[str, Database], Dict[str, Job]]:
+
+    databases: Dict[str, Database] = {}
+    jobs: Dict[str, Job] = {}
+
+    if configfile is None:
+        configfile = "syncconfig.yml"
+        if not os.path.isfile(configfile):
+            configfile = "{}/kpsync/syncconfig.yml".format(xdg_config_home())
+
+    if os.path.isfile(configfile):
+        config_schema: yaml.compound.Map = yaml.Map(
+            {
+                "db": yaml.MapPattern(
+                    yaml.Str(), yaml.Map({"dbfile": yaml.Str(), "keyfile": yaml.Str()})
+                ),
+                "job": yaml.MapPattern(
+                    yaml.Str(),
+                    yaml.Map(
+                        {"db": yaml.Seq(yaml.Str()), "entries": yaml.Seq(yaml.Str())}
+                    ),
+                ),
+            }
+        )
+        with open(configfile) as f:
+            data: str = f.read()
+        config: Dict[str, Dict] = yaml.load(data, config_schema).data
 
     try:
-        entries: List[str] = config["entries"]["entries"].strip().split("\n")
-
-        db_list: List[Tuple[str, Optional[str]]] = args.database
-        if len(db_list) == 0:
-            for db_name, data in config["db"].items():
-                db_info: List[str] = data.strip().split("\n")
-                db_file: str = os.path.expanduser(os.path.expandvars(db_info[0]))
-                db_key: Optional[str] = (
-                    os.path.expanduser(os.path.expandvars(db_info[1]))
-                    if len(db_info) > 1
-                    else None
-                )
-                db_list.append((db_file, db_key))
+        for dbname, dbvalues in config["db"].items():
+            dbfile = os.path.expanduser(os.path.expandvars(dbvalues["dbfile"]))
+            keyfile = os.path.expanduser(os.path.expandvars(dbvalues["keyfile"]))
+            databases[dbname] = Database(dbname, dbfile, keyfile)
+        for jobname, jobvalues in config["job"].items():
+            jobs[jobname] = Job(jobname, jobvalues["db"], jobvalues["entries"])
     except KeyError as e:
-        LOG.critical("malformed or missing syncconfig.ini file: {}".format(e))
+        LOG.critical("malformed or missing syncconfig.yml file: {}".format(e))
         exit(0)
 
-    return db_list, entries
+    return databases, jobs
 
 
 def persist_entry(
@@ -275,26 +304,99 @@ def create_db_handle(
     return kp
 
 
-def main():
-    args: argparse.Namespace = parse_args()
-    db_list, entries = parse_config(args)
+def list_entities(
+    args: argparse.Namespace, db_list: Dict[str, Database], jobs: Dict[str, Job]
+):
+    def print_dbs(db_list: Dict[str, Database]):
+        for dbname, dbvalues in db_list.items():
+            if args.verbose:
+                print(
+                    yaml.as_document(
+                        {
+                            dbname: {
+                                "dbfile": dbvalues.dbfile,
+                                "keyfile": dbvalues.keyfile,
+                            }
+                        }
+                    ).as_yaml()
+                )
+            else:
+                print(dbname)
 
-    try:
-        db_handles: List[PyKeePassNoCache] = [
-            create_db_handle(db_filepath, key_path) for db_filepath, key_path in db_list
-        ]
-    except CredentialsError as e:
-        LOG.fatal("bad credentials: {}".format(e))
-        exit(1)
+    def print_jobs(jobs: Dict[str, Job]):
+        for jobname, jobdata in jobs.items():
+            if args.verbose:
+                print(
+                    yaml.as_document(
+                        {
+                            jobdata.jobname: {
+                                "db": jobdata.db,
+                                "entries": jobdata.entries,
+                            }
+                        }
+                    ).as_yaml()
+                )
+            else:
+                print(jobname)
 
+    if args.ENTITY_TYPE == "all":
+        print("------ db ------")
+        print_dbs(db_list)
+        print("----- jobs -----")
+        print_jobs(jobs)
+    elif args.ENTITY_TYPE == "db":
+        print_dbs(db_list)
+    elif args.ENTITY_TYPE == "jobs":
+        print_jobs(jobs)
+
+
+def run_job(db_handles: Dict[str, PyKeePassNoCache], job: Job, dry_run: bool):
     dbs_to_save: Set[PyKeePassNoCache] = set()
-    for entry in entries:
-        updated_dbs: Set[PyKeePassNoCache] = sync_entry(db_handles, entry)
+    sync_handles: List[PyKeePassNoCache] = [db_handles[dbname] for dbname in job.db]
+    for entry in job.entries:
+        updated_dbs: Set[PyKeePassNoCache] = sync_entry(sync_handles, entry)
         dbs_to_save.update(updated_dbs)
 
-    for db in dbs_to_save:
-        LOG.info("saving db {}".format(db.filename))
-        db.save()
+    if not dry_run:
+        for db in dbs_to_save:
+            LOG.info("saving db {}".format(db.filename))
+            db.save()
+
+
+def main():
+    args: argparse.Namespace = parse_args()
+    db_list: Dict[str, Database]
+    jobs: Dict[str, Job]
+    db_list, jobs = parse_config(args.config)
+
+    def get_db_handles(
+        dbs_to_open: Set[str], db_list: Dict[str, Database]
+    ) -> Dict[str, PyKeePassNoCache]:
+        try:
+            db_handles: Dict[str, PyKeePassNoCache] = {
+                dbname: create_db_handle(db.dbfile, db.keyfile)
+                for dbname, db in db_list.items()
+                if dbname in dbs_to_open
+            }
+        except CredentialsError as e:
+            LOG.fatal("bad credentials: {}".format(e))
+            exit(1)
+        return db_handles
+
+    if args.command == "list":
+        list_entities(args, db_list, jobs)
+    elif args.command == "run":
+        dbs_to_open = set(
+            [dbname for jobname in args.JOB_NAME for dbname in jobs[jobname].db]
+        )
+        db_handles = get_db_handles(dbs_to_open, db_list)
+        for jobname in args.JOB_NAME:
+            run_job(db_handles, jobs[jobname], args.dry_run)
+    elif args.command == "sync":
+        job = Job("synccmd", args.db, args.entries)
+        dbs_to_open = set([dbname for dbname in args.db])
+        db_handles = get_db_handles(dbs_to_open, db_list)
+        run_job(db_handles, job, args.dry_run)
 
 
 if __name__ == "__main__":
