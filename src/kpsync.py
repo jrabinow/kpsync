@@ -45,7 +45,9 @@ def parse_args() -> argparse.Namespace:
         help="enable debug logging information",
     )
     parser.add_argument("--config", help="manually specify config file")
-    subparsers: argparse._SubParsersAction = parser.add_subparsers(dest="command")
+    subparsers: argparse._SubParsersAction = parser.add_subparsers(
+        dest="command", required=True
+    )
     listparser: argparse.ArgumentParser = subparsers.add_parser(
         "list", help="list entities in the config file"
     )
@@ -75,7 +77,7 @@ def parse_args() -> argparse.Namespace:
         "--db",
         required=True,
         nargs="+",
-        help="db name. DB must be registered in config file",
+        help="db name, either registered in syncconfig.yml or in DBFILEPATH[:KEYFILEPATH] format",
     )
     syncparser.add_argument(
         "--entries", required=True, nargs="+", help="list of entries"
@@ -172,9 +174,7 @@ def persist_entry(
             or existing_entry.icon != uptodate_entry.icon
         ):
             LOG.info(
-                "updating existing uptodate_entry {} in group {} ({})".format(
-                    uptodate_entry, group, db_file.filename
-                )
+                "updating {}: {}/{}".format(db_file.filename, group, uptodate_entry)
             )
             dirty = True
             existing_entry.title = uptodate_entry.title
@@ -304,6 +304,19 @@ def create_db_handle(
     return kp
 
 
+def get_db_struct(dbname: str, db_list: Dict[str, Database]):
+    if dbname in db_list:
+        return db_list[dbname]
+    else:
+        parsed_dbname = dbname.split(":")
+        new_db = Database(
+            parsed_dbname[0],
+            parsed_dbname[0],
+            keyfile=parsed_dbname[1] if len(parsed_dbname) > 1 else None,
+        )
+        return new_db
+
+
 def list_entities(
     args: argparse.Namespace, db_list: Dict[str, Database], jobs: Dict[str, Job]
 ):
@@ -369,14 +382,10 @@ def main():
     jobs: Dict[str, Job]
     db_list, jobs = parse_config(args.config)
 
-    def get_db_handles(
-        dbs_to_open: Set[str], db_list: Dict[str, Database]
-    ) -> Dict[str, PyKeePassNoCache]:
+    def get_db_handles(dbs_to_open: Set[str]) -> Dict[str, PyKeePassNoCache]:
         try:
             db_handles: Dict[str, PyKeePassNoCache] = {
-                dbname: create_db_handle(db.dbfile, db.keyfile)
-                for dbname, db in db_list.items()
-                if dbname in dbs_to_open
+                db.dbname: create_db_handle(db.dbfile, db.keyfile) for db in dbs_to_open
             }
         except CredentialsError as e:
             LOG.fatal("bad credentials: {}".format(e))
@@ -387,16 +396,23 @@ def main():
         list_entities(args, db_list, jobs)
     elif args.command == "run":
         dbs_to_open = set(
-            [dbname for jobname in args.JOB_NAME for dbname in jobs[jobname].db]
+            [
+                get_db_struct(dbname, db_list)
+                for jobname in args.JOB_NAME
+                for dbname in jobs[jobname].db
+            ]
         )
-        db_handles = get_db_handles(dbs_to_open, db_list)
+        db_handles = get_db_handles(dbs_to_open)
         for jobname in args.JOB_NAME:
             run_job(db_handles, jobs[jobname], args.dry_run)
     elif args.command == "sync":
-        job = Job("synccmd", args.db, args.entries)
-        dbs_to_open = set([dbname for dbname in args.db])
-        db_handles = get_db_handles(dbs_to_open, db_list)
+        dbs_to_open = set([get_db_struct(dbname, db_list) for dbname in args.db])
+        job = Job("synccmd", [db.dbname for db in dbs_to_open], args.entries)
+        db_handles = get_db_handles(dbs_to_open)
         run_job(db_handles, job, args.dry_run)
+    else:
+        LOG.fatal("missing command")
+        exit(1)
 
 
 if __name__ == "__main__":
