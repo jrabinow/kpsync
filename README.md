@@ -8,12 +8,14 @@ Limitations:
 
 Install dependencies:
 ```
-pipenv install
+virtualenv venv
+source ./venv/bin/activate
+pip install -r requirements.txt
 ```
 
 Create a syncconfig.yml file (sample follows), either in the current directory, or in ~/.config/kpsync/:
 
-```
+```yaml
 db:
   # You can add as many KeePassX DB files as you'd like to this section,
   # DB names are fooDB and barDB here, but you can name them anything they want
@@ -58,11 +60,12 @@ Then, launch kpsync:
 $ ./kpsync list jobs
 default
 foojob
-$ ./kpsync run foojob
+$ ./kpsync run foojob           # run by specifying a job name
 $ ./kpsync run                  # if no job is specified, `default` job is run
-$ ./kpsync sync --db fooDB barDB --entries microsoft discord linkedin
+$ # or you can get fine-grained control by specifying everything from the command-line
+$ ./kpsync sync --db fooDB path/to/otherdb/not/in/syncconfig.yml:path/to/keyfile --entries microsoft discord linkedin
 ```
-KPSync will use the `syncconfig.yml` file found in the current directory by default - if that's not found, it will check $XDG_CONFIG_HOME/kpsync/syncconfig.yml. You can also specify the path to the config file by using the `--config` option
+KPSync will use the `syncconfig.yml` file found in the current directory by default - if that's not found, it will check `$XDG_CONFIG_HOME/kpsync/syncconfig.yml`. You can also specify the path to the config file by using the `--config` option
 
 ```
 usage: kpsync.py [-h] [-d] [--config CONFIG] {list,run,sync} ...
@@ -71,7 +74,7 @@ positional arguments:
   {list,run,sync}
     list           list entities in the config file
     run            run a job
-    sync           specify dbs and entries to sync from the command-line. DBs must be registered in the config file
+    sync           specify dbs and entries to sync from the command-line
 
 optional arguments:
   -h, --help       show this help message and exit
@@ -101,7 +104,8 @@ usage: kpsync.py sync [-h] [--dry-run] --db DB [DB ...] --entries ENTRIES
 
 optional arguments:
   --dry-run             don't save dbs, just print what would be done
-  --db DB [DB ...]      db name. DB must be registered in config file
+  --db DB [DB ...]      db name, either registered in syncconfig.yml or in
+                        DBFILEPATH[:KEYFILEPATH] format
   --entries ENTRIES [ENTRIES ...]
                         list of entries
 ```

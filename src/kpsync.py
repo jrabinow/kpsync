@@ -382,7 +382,7 @@ def main():
     jobs: Dict[str, Job]
     db_list, jobs = parse_config(args.config)
 
-    def get_db_handles(dbs_to_open: Set[str]) -> Dict[str, PyKeePassNoCache]:
+    def get_db_handles(dbs_to_open: Set[Database]) -> Dict[str, PyKeePassNoCache]:
         try:
             db_handles: Dict[str, PyKeePassNoCache] = {
                 db.dbname: create_db_handle(db.dbfile, db.keyfile) for db in dbs_to_open
