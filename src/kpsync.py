@@ -11,6 +11,7 @@ import logging
 import os
 import stat
 from collections import namedtuple
+from pathlib import PurePath
 from typing import Dict, List, Optional, Set, Tuple
 
 import strictyaml as yaml
@@ -42,7 +43,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="enable debug logging information",
     )
-    parser.add_argument("--config", help="manually specify config file")
+    parser.add_argument("--config", type=PurePath, help="manually specify config file")
     subparsers: argparse._SubParsersAction = parser.add_subparsers(
         dest="command", required=True
     )
@@ -90,15 +91,17 @@ def is_dir_world_readable(directory: str = ".") -> bool:
     return bool(st.st_mode & stat.S_IROTH)
 
 
-def parse_config(configfile: str = None) -> Tuple[Dict[str, Database], Dict[str, Job]]:
+def parse_config(
+    configfile: Optional[PurePath] = None,
+) -> Tuple[Dict[str, Database], Dict[str, Job]]:
 
     databases: Dict[str, Database] = {}
     jobs: Dict[str, Job] = {}
 
     if configfile is None:
-        configfile = "syncconfig.yml"
+        configfile = PurePath("syncconfig.yml")
         if not os.path.isfile(configfile):
-            configfile = "{}/kpsync/syncconfig.yml".format(xdg_config_home())
+            configfile = PurePath(xdg_config_home()) / "kpsync/syncconfig.yml"
 
     if os.path.isfile(configfile):
         config_schema: yaml.compound.Map = yaml.Map(
@@ -118,16 +121,16 @@ def parse_config(configfile: str = None) -> Tuple[Dict[str, Database], Dict[str,
             data: str = f.read()
         config: Dict[str, Dict] = yaml.load(data, config_schema).data
 
-    try:
-        for dbname, dbvalues in config["db"].items():
-            dbfile = os.path.expanduser(os.path.expandvars(dbvalues["dbfile"]))
-            keyfile = os.path.expanduser(os.path.expandvars(dbvalues["keyfile"]))
-            databases[dbname] = Database(dbname, dbfile, keyfile)
-        for jobname, jobvalues in config["job"].items():
-            jobs[jobname] = Job(jobname, jobvalues["db"], jobvalues["entries"])
-    except KeyError as e:
-        LOG.critical("malformed or missing syncconfig.yml file: {}".format(e))
-        exit(0)
+        try:
+            for dbname, dbvalues in config["db"].items():
+                dbfile = os.path.expanduser(os.path.expandvars(dbvalues["dbfile"]))
+                keyfile = os.path.expanduser(os.path.expandvars(dbvalues["keyfile"]))
+                databases[dbname] = Database(dbname, dbfile, keyfile)
+            for jobname, jobvalues in config["job"].items():
+                jobs[jobname] = Job(jobname, jobvalues["db"], jobvalues["entries"])
+        except KeyError as e:
+            LOG.critical("malformed or missing syncconfig.yml file: {}".format(e))
+            exit(0)
 
     return databases, jobs
 
@@ -313,50 +316,15 @@ def get_db_struct(dbname: str, db_list: Dict[str, Database]):
     return new_db
 
 
-def list_entities(
-    args: argparse.Namespace, db_list: Dict[str, Database], jobs: Dict[str, Job]
-):
-    def print_dbs(db_list: Dict[str, Database]):
-        for dbname, dbvalues in db_list.items():
-            if args.verbose:
-                print(
-                    yaml.as_document(
-                        {
-                            dbname: {
-                                "dbfile": dbvalues.dbfile,
-                                "keyfile": dbvalues.keyfile,
-                            }
-                        }
-                    ).as_yaml()
-                )
-            else:
-                print(dbname)
-
-    def print_jobs(jobs: Dict[str, Job]):
-        for jobname, jobdata in jobs.items():
-            if args.verbose:
-                print(
-                    yaml.as_document(
-                        {
-                            jobdata.jobname: {
-                                "db": jobdata.db,
-                                "entries": jobdata.entries,
-                            }
-                        }
-                    ).as_yaml()
-                )
-            else:
-                print(jobname)
-
-    if args.ENTITY_TYPE == "all":
-        print("------ db ------")
-        print_dbs(db_list)
-        print("----- jobs -----")
-        print_jobs(jobs)
-    elif args.ENTITY_TYPE == "db":
-        print_dbs(db_list)
-    elif args.ENTITY_TYPE == "jobs":
-        print_jobs(jobs)
+def get_db_handles(dbs_to_open: Set[Database]) -> Dict[str, PyKeePassNoCache]:
+    try:
+        db_handles: Dict[str, PyKeePassNoCache] = {
+            db.dbname: create_db_handle(db.dbfile, db.keyfile) for db in dbs_to_open
+        }
+    except CredentialsError as e:
+        LOG.fatal("bad credentials: {}".format(e))
+        exit(1)
+    return db_handles
 
 
 def run_job(db_handles: Dict[str, PyKeePassNoCache], job: Job, dry_run: bool):
@@ -372,38 +340,95 @@ def run_job(db_handles: Dict[str, PyKeePassNoCache], job: Job, dry_run: bool):
             db.save()
 
 
+def list_entities(
+    entity_type: str,
+    db_list: Dict[str, Database],
+    jobs: Dict[str, Job],
+    verbose: bool = False,
+):
+    def print_dbs(db_list: Dict[str, Database]):
+        for dbname, dbvalues in db_list.items():
+            if verbose:
+                print(
+                    yaml.as_document(
+                        {
+                            dbname: {
+                                "dbfile": dbvalues.dbfile,
+                                "keyfile": dbvalues.keyfile,
+                            }
+                        }
+                    ).as_yaml()
+                )
+            else:
+                print(dbname)
+
+    def print_jobs(jobs: Dict[str, Job]):
+        for jobname, jobdata in jobs.items():
+            if verbose:
+                print(
+                    yaml.as_document(
+                        {
+                            jobdata.jobname: {
+                                "db": jobdata.db,
+                                "entries": jobdata.entries,
+                            }
+                        }
+                    ).as_yaml()
+                )
+            else:
+                print(jobname)
+
+    if entity_type == "all":
+        print("------ db ------")
+        print_dbs(db_list)
+        print("----- jobs -----")
+        print_jobs(jobs)
+    elif entity_type == "db":
+        print_dbs(db_list)
+    elif entity_type == "jobs":
+        print_jobs(jobs)
+
+
+def run(
+    job_names: List[str],
+    db_list: Dict[str, Database],
+    jobs: Dict[str, Job],
+    dry_run: bool = False,
+):
+    dbs_to_open = set(
+        get_db_struct(dbname, db_list)
+        for jobname in job_names
+        for dbname in jobs[jobname].db
+    )
+    db_handles = get_db_handles(dbs_to_open)
+    for job in job_names:
+        run_job(db_handles, jobs[job], dry_run)
+
+
+def sync(
+    db_names: List[str],
+    entries: List[str],
+    db_list: Dict[str, Database],
+    dry_run: bool = False,
+):
+    dbs_to_open = set(get_db_struct(dbname, db_list) for dbname in db_names)
+    db_handles = get_db_handles(dbs_to_open)
+    job = Job("synccmd", [db.dbname for db in dbs_to_open], entries)
+    run_job(db_handles, job, dry_run)
+
+
 def main():
     args: argparse.Namespace = parse_args()
     db_list: Dict[str, Database]
     jobs: Dict[str, Job]
     db_list, jobs = parse_config(args.config)
 
-    def get_db_handles(dbs_to_open: Set[Database]) -> Dict[str, PyKeePassNoCache]:
-        try:
-            db_handles: Dict[str, PyKeePassNoCache] = {
-                db.dbname: create_db_handle(db.dbfile, db.keyfile) for db in dbs_to_open
-            }
-        except CredentialsError as e:
-            LOG.fatal("bad credentials: {}".format(e))
-            exit(1)
-        return db_handles
-
     if args.command == "list":
-        list_entities(args, db_list, jobs)
+        list_entities(args.ENTITY_TYPE, db_list, jobs, args.verbose)
     elif args.command == "run":
-        dbs_to_open = set(
-            get_db_struct(dbname, db_list)
-            for jobname in args.JOB_NAME
-            for dbname in jobs[jobname].db
-        )
-        db_handles = get_db_handles(dbs_to_open)
-        for jobname in args.JOB_NAME:
-            run_job(db_handles, jobs[jobname], args.dry_run)
+        run(args.JOB_NAME, db_list, jobs, args.dry_run)
     elif args.command == "sync":
-        dbs_to_open = set(get_db_struct(dbname, db_list) for dbname in args.db)
-        job = Job("synccmd", [db.dbname for db in dbs_to_open], args.entries)
-        db_handles = get_db_handles(dbs_to_open)
-        run_job(db_handles, job, args.dry_run)
+        sync(args.db, args.entries, db_list, args.dry_run)
     else:
         LOG.fatal("missing command")
         exit(1)
