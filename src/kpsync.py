@@ -267,7 +267,7 @@ def sync_entry(
 
     uptodate_db, uptodate_entry = max(
         entry_dict.items(),
-        key=lambda e: e[1].ctime.timestamp() if e[1] is not None else -1,
+        key=lambda e: e[1].mtime.timestamp() if e[1] is not None else -1,
     )
 
     if uptodate_entry is None:
@@ -303,8 +303,20 @@ def create_db_handle(
         timeout = None
 
     if timeout is not None:
-        if db_filepath in cached_databases(socket_path=socket_path):
-            return cached_databases(socket_path=socket_path)[db_filepath]
+        raise Exception(
+            "there's a bug, please don't use timeout parameter. See source code for details"
+        )
+        # pykeepass_cache seems to be caching the data as well as the credentials. This doesn't
+        # work for the edge case where I open the database in pykeepass, then modify the same db
+        # using an external program such as KeePassX
+        # The pykeepass_cache dev explicitly handled this case, see
+        # https://github.com/libkeepass/pykeepass_cache/blob/6dbd1826f98649900c828876b3d4c652be572ebd/pykeepass_cache/pykeepass_cache.py#L42
+        # so the bug must be coming from somewhere else
+        # Let's disable this for the time being
+
+        # if db.dbfile in cached_databases(socket_path=socket_path):
+        if False:
+            return cached_databases(socket_path=socket_path)[db.dbfile]
         PyKeePass = PyKeePassCached
         password = getpass.getpass(prompt="Password for {}: ".format(db.dbfile))
         try:
