@@ -6,11 +6,9 @@ Limitations:
 - Yubikeys, OTP and other methods of unlocking are not supported (contributions welcome!)
 - the sync algorithm is very dumb and does not handle conflicts: if you update the same entry in 2 different DBs, the most recent update will overwrite any changes made to the entry in the other DB
 
-Install dependencies:
+Install:
 ```
-virtualenv venv
-source ./venv/bin/activate
-pip install -r requirements.txt
+$ python setup.py install
 ```
 
 Create a syncconfig.yml file (sample follows), either in the current directory, or in ~/.config/kpsync/:

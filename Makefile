@@ -18,7 +18,7 @@ docs:
 
 clean:
 	$(RM) pykeepass_socket
-	$(RM) -r ./build/ .mypy_cache ./src/__pycache__ ./src/*.pyc
+	$(RM) -r ./build/ .mypy_cache ./src/__pycache__ ./src/*.pyc ./dist *.egg-info
 	test -d docs && cd docs && $(MAKE) clean || true
 
 requirements:

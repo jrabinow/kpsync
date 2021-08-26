@@ -1,3 +1,0 @@
-pykeepass==4.0.0
-strictyaml==1.4.4
-xdg==5.1.1
