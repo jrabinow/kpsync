@@ -8,10 +8,8 @@ Sync DB passwords according to syncconfig.yml
 import argparse
 import getpass
 import logging
-import json
 import os
 import stat
-import sys
 from collections import namedtuple
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -66,7 +64,7 @@ def parse_args() -> argparse.Namespace:
 
     syncparser: argparse.ArgumentParser = subparsers.add_parser(
         "sync",
-        help="specify dbs and entries to sync from the command-line. DBs must be registered in the config file",
+        help="specify dbs and entries to sync from the command-line",
     )
     syncparser.add_argument(
         "--dry-run",
@@ -260,15 +258,14 @@ def sync_entry(
                 entry_title
             )
         )
-    else:
-        updated_dbs: Set[PyKeePassNoCache] = set()
-        for handle in db_handles:
-            if handle != uptodate_db:
-                _, dirty = persist_entry(handle, uptodate_entry)
-                if dirty:
-                    updated_dbs.add(handle)
+    updated_dbs: Set[PyKeePassNoCache] = set()
+    for handle in db_handles:
+        if handle != uptodate_db:
+            _, dirty = persist_entry(handle, uptodate_entry)
+            if dirty:
+                updated_dbs.add(handle)
 
-        return updated_dbs
+    return updated_dbs
 
 
 def create_db_handle(
@@ -307,14 +304,13 @@ def create_db_handle(
 def get_db_struct(dbname: str, db_list: Dict[str, Database]):
     if dbname in db_list:
         return db_list[dbname]
-    else:
-        parsed_dbname = dbname.split(":")
-        new_db = Database(
-            parsed_dbname[0],
-            parsed_dbname[0],
-            keyfile=parsed_dbname[1] if len(parsed_dbname) > 1 else None,
-        )
-        return new_db
+    parsed_dbname = dbname.split(":")
+    new_db = Database(
+        parsed_dbname[0],
+        parsed_dbname[0],
+        keyfile=parsed_dbname[1] if len(parsed_dbname) > 1 else None,
+    )
+    return new_db
 
 
 def list_entities(
@@ -396,17 +392,15 @@ def main():
         list_entities(args, db_list, jobs)
     elif args.command == "run":
         dbs_to_open = set(
-            [
-                get_db_struct(dbname, db_list)
-                for jobname in args.JOB_NAME
-                for dbname in jobs[jobname].db
-            ]
+            get_db_struct(dbname, db_list)
+            for jobname in args.JOB_NAME
+            for dbname in jobs[jobname].db
         )
         db_handles = get_db_handles(dbs_to_open)
         for jobname in args.JOB_NAME:
             run_job(db_handles, jobs[jobname], args.dry_run)
     elif args.command == "sync":
-        dbs_to_open = set([get_db_struct(dbname, db_list) for dbname in args.db])
+        dbs_to_open = set(get_db_struct(dbname, db_list) for dbname in args.db)
         job = Job("synccmd", [db.dbname for db in dbs_to_open], args.entries)
         db_handles = get_db_handles(dbs_to_open)
         run_job(db_handles, job, args.dry_run)
