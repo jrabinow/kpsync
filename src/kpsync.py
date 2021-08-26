@@ -12,10 +12,11 @@ import os
 import stat
 from collections import namedtuple
 from pathlib import PurePath
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple, Type, Any
 
 import strictyaml as yaml
 from pykeepass import PyKeePass as PyKeePassNoCache
+from pykeepass_cache import PyKeePass as PyKeePassCached, cached_databases
 from pykeepass.entry import Entry
 from pykeepass.exceptions import CredentialsError
 from pykeepass.group import Group
@@ -60,6 +61,13 @@ def parse_args() -> argparse.Namespace:
         help="don't save dbs, just print what would be done",
     )
     runparser.add_argument(
+        "--timeout",
+        type=int,
+        const=600,
+        nargs="?",
+        help="cache database credentials for TIMEOUT seconds (default 600)",
+    )
+    runparser.add_argument(
         "JOB_NAME", help="specify job name", nargs="*", default=["default"]
     )
 
@@ -71,6 +79,13 @@ def parse_args() -> argparse.Namespace:
         "--dry-run",
         action="store_true",
         help="don't save dbs, just print what would be done",
+    )
+    syncparser.add_argument(
+        "--timeout",
+        type=int,
+        const=600,
+        nargs="?",
+        help="cache database credentials for TIMEOUT seconds (default 600)",
     )
     syncparser.add_argument(
         "--db",
@@ -274,33 +289,46 @@ def sync_entry(
 def create_db_handle(
     db_filepath: str,
     db_keypath: str = None,
-    use_cache: bool = True,
     socket_path: str = "./pykeepass_socket",
+    timeout: int = None,
 ) -> PyKeePassNoCache:
 
-    # use_cache = not is_dir_world_readable()
+    passord: str
+    PyKeePass: Type[Any]
+    kp: PyKeePass
 
-    # if use_cache:
-    #     if db_filepath not in cached_databases(socket_path=socket_path):
-    #        password: str = getpass.getpass(
-    #            prompt="Password for {}: ".format(db_filepath)
-    #        )
-    #     kp = PyKeePass(
-    #        db_filepath,
-    #        password=password,
-    #        keyfile=db_keypath,
-    #        timeout=600,
-    #        socket_path=socket_path,
-    #     )
-    password: str = getpass.getpass(prompt="Password for {}: ".format(db_filepath))
-    try:
-        kp: PyKeePassNoCache = PyKeePassNoCache(
-            db_filepath,
-            password=password,
-            keyfile=db_keypath,
+    if timeout is not None and is_dir_world_readable():
+        LOG.warning(
+            "dir is world-readable, disabling caching to prevent security issue"
         )
-    except FileNotFoundError as e:
-        LOG.critical("file not found: {}".format(e))
+        timeout = None
+
+    if timeout is not None:
+        if db_filepath in cached_databases(socket_path=socket_path):
+            return cached_databases(socket_path=socket_path)[db_filepath]
+        PyKeePass = PyKeePassCached
+        password = getpass.getpass(prompt="Password for {}: ".format(db_filepath))
+        try:
+            kp = PyKeePass(
+                db_filepath,
+                password=password,
+                keyfile=db_keypath,
+                timeout=600,
+                socket_path=socket_path,
+            )
+        except FileNotFoundError as e:
+            LOG.critical("file not found: {}".format(e))
+    else:
+        PyKeePass = PyKeePassNoCache
+        password = getpass.getpass(prompt="Password for {}: ".format(db_filepath))
+        try:
+            kp: PyKeePass = PyKeePass(
+                db_filepath,
+                password=password,
+                keyfile=db_keypath,
+            )
+        except FileNotFoundError as e:
+            LOG.critical("file not found: {}".format(e))
     return kp
 
 
@@ -316,10 +344,13 @@ def get_db_struct(dbname: str, db_list: Dict[str, Database]):
     return new_db
 
 
-def get_db_handles(dbs_to_open: Set[Database]) -> Dict[str, PyKeePassNoCache]:
+def get_db_handles(
+    dbs_to_open: Set[Database], timeout=None
+) -> Dict[str, PyKeePassNoCache]:
     try:
         db_handles: Dict[str, PyKeePassNoCache] = {
-            db.dbname: create_db_handle(db.dbfile, db.keyfile) for db in dbs_to_open
+            db.dbname: create_db_handle(db.dbfile, db.keyfile, timeout=timeout)
+            for db in dbs_to_open
         }
     except CredentialsError as e:
         LOG.fatal("bad credentials: {}".format(e))
@@ -394,13 +425,17 @@ def run(
     db_list: Dict[str, Database],
     jobs: Dict[str, Job],
     dry_run: bool = False,
+    timeout: int = None,
 ):
-    dbs_to_open = set(
-        get_db_struct(dbname, db_list)
-        for jobname in job_names
-        for dbname in jobs[jobname].db
+    dbs_to_open = sorted(
+        set(
+            get_db_struct(dbname, db_list)
+            for jobname in job_names
+            for dbname in jobs[jobname].db
+        ),
+        key=lambda db: db.dbname,
     )
-    db_handles = get_db_handles(dbs_to_open)
+    db_handles = get_db_handles(dbs_to_open, timeout=timeout)
     for job in job_names:
         run_job(db_handles, jobs[job], dry_run)
 
@@ -410,9 +445,13 @@ def sync(
     entries: List[str],
     db_list: Dict[str, Database],
     dry_run: bool = False,
+    timeout: int = None,
 ):
-    dbs_to_open = set(get_db_struct(dbname, db_list) for dbname in db_names)
-    db_handles = get_db_handles(dbs_to_open)
+    dbs_to_open = sorted(
+        set(get_db_struct(dbname, db_list) for dbname in db_names),
+        key=lambda db: db.dbname,
+    )
+    db_handles = get_db_handles(dbs_to_open, timeout=timeout)
     job = Job("synccmd", [db.dbname for db in dbs_to_open], entries)
     run_job(db_handles, job, dry_run)
 
@@ -426,9 +465,9 @@ def main():
     if args.command == "list":
         list_entities(args.ENTITY_TYPE, db_list, jobs, args.verbose)
     elif args.command == "run":
-        run(args.JOB_NAME, db_list, jobs, args.dry_run)
+        run(args.JOB_NAME, db_list, jobs, args.dry_run, args.timeout)
     elif args.command == "sync":
-        sync(args.db, args.entries, db_list, args.dry_run)
+        sync(args.db, args.entries, db_list, args.dry_run, args.timeout)
     else:
         LOG.fatal("missing command")
         exit(1)

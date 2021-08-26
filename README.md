@@ -86,22 +86,28 @@ positional arguments:
   {all,db,jobs}
 
 optional arguments:
+  -h, --help           show this help message and exit
   -v, --verbose  verbose mode
-
-####################################################
-usage: kpsync.py run [-h] [--dry-run] [JOB_NAME ...]
+##########################################################################
+usage: kpsync.py run [-h] [--dry-run] [--timeout [TIMEOUT]] [JOB_NAME ...]
 
 positional arguments:
-  JOB_NAME    specify job name
+  JOB_NAME             specify job name
 
 optional arguments:
-  --dry-run   don't save dbs, just print what would be done
-#########################################################################
-usage: kpsync.py sync [-h] [--dry-run] --db DB [DB ...] --entries ENTRIES
-                      [ENTRIES ...]
+  -h, --help           show this help message and exit
+  --dry-run            don't save dbs, just print what would be done
+  --timeout [TIMEOUT]  cache database credentials for TIMEOUT seconds (default
+                       600)
+#############################################################################
+usage: kpsync.py sync [-h] [--dry-run] [--timeout [TIMEOUT]] --db DB [DB ...]
+                      --entries ENTRIES [ENTRIES ...]
 
 optional arguments:
+  -h, --help            show this help message and exit
   --dry-run             don't save dbs, just print what would be done
+  --timeout [TIMEOUT]   cache database credentials for TIMEOUT seconds (default
+                        600)
   --db DB [DB ...]      db name, either registered in syncconfig.yml or in
                         DBFILEPATH[:KEYFILEPATH] format
   --entries ENTRIES [ENTRIES ...]
