@@ -253,7 +253,7 @@ def sync_entry(
 
     entry_dict: Dict[PyKeePassNoCache, Optional[Entry]] = {}
     for handle in db_handles:
-        matching_entries = handle.find_entries_by_title(
+        matching_entries: List[Entry] = handle.find_entries_by_title(
             entry_title,
             group=group_obj_nothrows_on_missing(handle, group_name),
             flags="I",
@@ -287,8 +287,7 @@ def sync_entry(
 
 
 def create_db_handle(
-    db_filepath: str,
-    db_keypath: str = None,
+    db: Database,
     socket_path: str = "./pykeepass_socket",
     timeout: int = None,
 ) -> PyKeePassNoCache:
@@ -307,12 +306,12 @@ def create_db_handle(
         if db_filepath in cached_databases(socket_path=socket_path):
             return cached_databases(socket_path=socket_path)[db_filepath]
         PyKeePass = PyKeePassCached
-        password = getpass.getpass(prompt="Password for {}: ".format(db_filepath))
+        password = getpass.getpass(prompt="Password for {}: ".format(db.dbfile))
         try:
             kp = PyKeePass(
-                db_filepath,
+                db.dbfile,
                 password=password,
-                keyfile=db_keypath,
+                keyfile=db.keyfile,
                 timeout=600,
                 socket_path=socket_path,
             )
@@ -320,12 +319,12 @@ def create_db_handle(
             LOG.critical("file not found: {}".format(e))
     else:
         PyKeePass = PyKeePassNoCache
-        password = getpass.getpass(prompt="Password for {}: ".format(db_filepath))
+        password = getpass.getpass(prompt="Password for {}: ".format(db.dbfile))
         try:
             kp: PyKeePass = PyKeePass(
-                db_filepath,
+                db.dbfile,
                 password=password,
-                keyfile=db_keypath,
+                keyfile=db.keyfile,
             )
         except FileNotFoundError as e:
             LOG.critical("file not found: {}".format(e))
@@ -349,8 +348,7 @@ def get_db_handles(
 ) -> Dict[str, PyKeePassNoCache]:
     try:
         db_handles: Dict[str, PyKeePassNoCache] = {
-            db.dbname: create_db_handle(db.dbfile, db.keyfile, timeout=timeout)
-            for db in dbs_to_open
+            db.dbname: create_db_handle(db, timeout=timeout) for db in dbs_to_open
         }
     except CredentialsError as e:
         LOG.fatal("bad credentials: {}".format(e))
