@@ -292,7 +292,7 @@ def create_db_handle(
     timeout: int = None,
 ) -> PyKeePassNoCache:
 
-    passord: str
+    password: str
     PyKeePass: Type[Any]
     kp: PyKeePass
 
@@ -303,20 +303,13 @@ def create_db_handle(
         timeout = None
 
     if timeout is not None:
-        raise Exception(
-            "there's a bug, please don't use timeout parameter. See source code for details"
-        )
-        # pykeepass_cache seems to be caching the data as well as the credentials. This doesn't
-        # work for the edge case where I open the database in pykeepass, then modify the same db
-        # using an external program such as KeePassX
-        # The pykeepass_cache dev explicitly handled this case, see
-        # https://github.com/libkeepass/pykeepass_cache/blob/6dbd1826f98649900c828876b3d4c652be572ebd/pykeepass_cache/pykeepass_cache.py#L42
-        # so the bug must be coming from somewhere else
-        # Let's disable this for the time being
-
-        # if db.dbfile in cached_databases(socket_path=socket_path):
-        if False:
-            return cached_databases(socket_path=socket_path)[db.dbfile]
+        if db.dbfile in cached_databases(socket_path=socket_path):
+            cached_db = cached_databases(socket_path=socket_path)[db.dbfile]
+            # IMPORTANT: reload cached database. If you don't do this, kpsync won't take into
+            # account any changes since it first opened and read the the database. This will
+            # lead to much head scratching and time wasted on debugging stupid shit
+            cached_db.reload()
+            return cached_db
         PyKeePass = PyKeePassCached
         password = getpass.getpass(prompt="Password for {}: ".format(db.dbfile))
         try:
