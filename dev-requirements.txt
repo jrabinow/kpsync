@@ -1,5 +1,5 @@
 pykeepass-cache==2.0.3
-fire==0.4.0
-sphinx-rtd-theme==0.5.2
-Gooey==1.0.8.1
-pex==2.1.40
+fire>=0.4.0
+sphinx-rtd-theme>=0.5.2
+Gooey>=1.0.8.1
+pex>=2.1.40

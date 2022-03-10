@@ -11,7 +11,7 @@ setup(
     url="https://github.com/jrabinow/kpsync.git",
     license="GPL3+",
     install_requires=[
-        "pykeepass",
+        "pykeepass-cache",
         "strictyaml",
         "xdg",
     ],
