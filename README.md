@@ -5,6 +5,8 @@
 Limitations:
 - Yubikeys, OTP and other methods of unlocking are not supported (contributions welcome!)
 - the sync algorithm is very dumb and does not handle conflicts: if you update the same entry in 2 different DBs, the most recent update will overwrite any changes made to the entry in the other DB
+- doesn't handle moved entries, if you reorganize your db
+- doesn't copy over TOTP info
 
 Install:
 ```
