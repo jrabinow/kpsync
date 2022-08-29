@@ -12,6 +12,7 @@ setup(
     license="GPL3+",
     install_requires=[
         "pykeepass-cache",
+        "pykeepass",
         "strictyaml",
         "xdg",
     ],
