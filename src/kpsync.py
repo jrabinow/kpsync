@@ -160,7 +160,7 @@ def persist_entry(
         uptodate_entry.group.notes,
     )
     updated_entry: Entry
-    existing_entry: Optional[Entry] = db_file.find_entries_by_path(uptodate_entry.path)
+    existing_entry: Optional[Entry] = db_file.find_entries(path=uptodate_entry.path)
     if existing_entry is None:
         LOG.info("adding {} to {} ({})".format(uptodate_entry, group, db_file.filename))
         dirty = True
@@ -220,7 +220,7 @@ def persist_entry(
 def group_obj_nothrows_on_missing(
     db: PyKeePassNoCache, group_name: str
 ) -> Optional[Group]:
-    group_list: List[Group] = db.find_groups_by_name(group_name)
+    group_list: List[Group] = db.find_groups(name=group_name)
     return group_list[0] if len(group_list) > 0 else None
 
 
@@ -229,7 +229,7 @@ def ensure_group(
 ) -> Tuple[Group, bool]:
 
     dirty: bool = False
-    group: Group = db.find_groups_by_path(group_path)
+    group: Group = db.find_groups(path=group_path)
 
     if group is None:
         if len(group_path) <= 0:
@@ -251,6 +251,7 @@ def sync_entry(
     group_name: str = os.path.dirname(entry)
     entry_title: str = os.path.basename(entry)
 
+    # pull the entry from each db and store it in `entry_dict`
     entry_dict: Dict[PyKeePassNoCache, Optional[Entry]] = {}
     for handle in db_handles:
         matching_entries: List[Entry] = [e for e in handle.find_entries(
@@ -265,17 +266,21 @@ def sync_entry(
         )
         entry_dict[handle] = matching_entries[0] if len(matching_entries) > 0 else None
 
+    # identify db/entry pair which was updated last
     uptodate_db, uptodate_entry = max(
         entry_dict.items(),
         key=lambda e: e[1].mtime.timestamp() if e[1] is not None else -1,
     )
 
+    # make sure we have at least one entry
     if uptodate_entry is None:
         raise KeyError(
             "failed to find entry '{}' in both databases. Check the entry title for typos".format(
                 entry_title
             )
         )
+
+    # update all dbs with most uptodate entry
     updated_dbs: Set[PyKeePassNoCache] = set()
     for handle in db_handles:
         if handle != uptodate_db:
