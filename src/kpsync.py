@@ -253,15 +253,15 @@ def sync_entry(
 
     entry_dict: Dict[PyKeePassNoCache, Optional[Entry]] = {}
     for handle in db_handles:
-        matching_entries: List[Entry] = handle.find_entries_by_title(
-            entry_title,
+        matching_entries: List[Entry] = [e for e in handle.find_entries(
+            title=entry_title,
             group=group_obj_nothrows_on_missing(handle, group_name),
             flags="I",
-        )
+        ) if e.group.name != "Recycle Bin"]
         assert (
             len(matching_entries) <= 1
-        ), "more than 2 entries found for '{}' in {}".format(
-            entry_title, handle.filename
+            ), "more than 2 entries found for '{}' in {}: {}".format(
+            entry_title, handle.filename, matching_entries
         )
         entry_dict[handle] = matching_entries[0] if len(matching_entries) > 0 else None
 
