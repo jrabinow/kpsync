@@ -262,9 +262,7 @@ def sync_entry(
         ) if e.group.name != "Recycle Bin"]
         assert (
             len(matching_entries) <= 1
-            ), "more than 2 entries found for '{}' in {}: {}".format(
-            entry_title, handle.filename, matching_entries
-        )
+            ), f"more than 2 entries found for '{entry_title}' in {handle.filename}: {matching_entries}"
         entry_dict[handle] = matching_entries[0] if len(matching_entries) > 0 else None
 
     # identify db/entry pair which was updated last
@@ -276,9 +274,7 @@ def sync_entry(
     # make sure we have at least one entry
     if uptodate_entry is None:
         raise KeyError(
-            "failed to find entry '{}' in both databases. Check the entry title for typos".format(
-                entry_title
-            )
+            f"failed to find entry '{entry_title}' in both databases. Check the entry title for typos"
         )
 
     # update all dbs with most uptodate entry
@@ -299,8 +295,7 @@ def create_db_handle(
 ) -> PyKeePassNoCache:
 
     password: str
-    PyKeePass: Type[Any]
-    kp: PyKeePass
+    kp: Type[Any]
 
     if timeout is not None and is_dir_world_readable():
         LOG.warning(
@@ -317,7 +312,7 @@ def create_db_handle(
             cached_db.reload()
             return cached_db
         PyKeePass = PyKeePassCached
-        password = getpass.getpass(prompt="Password for {}: ".format(db.dbfile))
+        password = getpass.getpass(prompt=f"Password for {db.dbfile}: ")
         try:
             kp = PyKeePass(
                 db.dbfile,
@@ -332,7 +327,7 @@ def create_db_handle(
         PyKeePass = PyKeePassNoCache
         password = getpass.getpass(prompt="Password for {}: ".format(db.dbfile))
         try:
-            kp: PyKeePass = PyKeePass(
+            kp = PyKeePass(
                 db.dbfile,
                 password=password,
                 keyfile=db.keyfile,
@@ -355,14 +350,14 @@ def get_db_struct(dbname: str, db_list: Dict[str, Database]):
 
 
 def get_db_handles(
-    dbs_to_open: Set[Database], timeout=None
+    dbs_to_open: List[Database], timeout=None
 ) -> Dict[str, PyKeePassNoCache]:
     try:
         db_handles: Dict[str, PyKeePassNoCache] = {
             db.dbname: create_db_handle(db, timeout=timeout) for db in dbs_to_open
         }
     except CredentialsError as e:
-        LOG.fatal("bad credentials: {}".format(e))
+        LOG.fatal("bad credentials: {}" % e)
         exit(1)
     return db_handles
 
@@ -376,7 +371,7 @@ def run_job(db_handles: Dict[str, PyKeePassNoCache], job: Job, dry_run: bool):
 
     if not dry_run:
         for db in dbs_to_save:
-            LOG.info("saving db {}".format(db.filename))
+            LOG.info(f"saving db {db.filename}")
             db.save()
 
 
