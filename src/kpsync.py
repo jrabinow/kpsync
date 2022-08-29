@@ -257,7 +257,8 @@ def sync_entry(
         matching_entries: List[Entry] = [e for e in handle.find_entries(
             title=entry_title,
             group=group_obj_nothrows_on_missing(handle, group_name),
-            flags="I",
+            regex=True,
+            flags="i"
         ) if e.group.name != "Recycle Bin"]
         assert (
             len(matching_entries) <= 1
